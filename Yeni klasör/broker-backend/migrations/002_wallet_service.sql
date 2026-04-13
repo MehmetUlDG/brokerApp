@@ -1,0 +1,8 @@
+-- =============================================================================
+-- 002_wallet_service.sql — DEVRE DIŞI BIRAKILDI
+-- =============================================================================
+-- Bu dosyanın tüm içeriği 000003_create_orders_and_outbox_events.up.sql
+-- dosyasına taşınmıştır.
+--
+-- Tek şema kaynağı: 000003_create_orders_and_outbox_events.up.sql
+-- =============================================================================
