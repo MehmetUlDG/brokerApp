@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tradex Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      const observer = new IntersectionObserver(
+        (entries) => entries.forEach(e => {
+          if (e.isIntersecting) { 
+            e.target.classList.add('in-view');
+            observer.unobserve(e.target);
+          }
+        }),
+        { threshold: 0.12 }
+      );
+      // Wait for DOM and React to render
+      setTimeout(() => {
+        document.querySelectorAll('[data-animate]').forEach(el => observer.observe(el));
+        
+        // Also observe mutations in case of routing
+        const targetNode = document.getElementById('root');
+        const config = { childList: true, subtree: true };
+        const callback = function(mutationsList, observerInst) {
+            for(let mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    document.querySelectorAll('[data-animate]:not(.in-view)').forEach(el => observer.observe(el));
+                }
+            }
+        };
+        const mutationObserver = new MutationObserver(callback);
+        if(targetNode) mutationObserver.observe(targetNode, config);
+        
+        // Navbar scroll logic
+        window.addEventListener('scroll', () => {
+          const nav = document.querySelector('header');
+          if (nav) {
+            nav.classList.toggle('scrolled', window.scrollY > 40);
+          }
+        });
+      }, 500);
+    </script>
+  </body>
+</html>
