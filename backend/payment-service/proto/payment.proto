@@ -1,0 +1,64 @@
+syntax = "proto3";
+package payment;
+option go_package = "payment-service/gen/payment";
+
+service PaymentService {
+  rpc Deposit    (DepositRequest)    returns (DepositResponse);
+  rpc Withdraw   (WithdrawRequest)   returns (WithdrawResponse);
+  rpc GetHistory (HistoryRequest)    returns (HistoryResponse);
+  rpc GetBalance (BalanceRequest)    returns (BalanceResponse);
+}
+
+message DepositRequest {
+  string user_id                  = 1;
+  string amount                   = 2;
+  string currency                 = 3;
+  string stripe_payment_method_id = 4;
+}
+
+message DepositResponse {
+  string transaction_id = 1;
+  string status         = 2;
+}
+
+message WithdrawRequest {
+  string user_id          = 1;
+  string amount           = 2;
+  string currency         = 3;
+  string stripe_account_id = 4;
+}
+
+message WithdrawResponse {
+  string transaction_id = 1;
+  string status         = 2;
+}
+
+message HistoryRequest {
+  string user_id = 1;
+  int32  limit   = 2;
+  int32  offset  = 3;
+}
+
+message HistoryResponse {
+  repeated Transaction transactions = 1;
+}
+
+message BalanceRequest {
+  string user_id = 1;
+}
+
+message BalanceResponse {
+  string usd_balance = 1;
+  string btc_balance = 2;
+}
+
+message Transaction {
+  string id         = 1;
+  string user_id    = 2;
+  string type       = 3;
+  string amount     = 4;
+  string currency   = 5;
+  string status     = 6;
+  string stripe_ref = 7;
+  string created_at = 8;
+}

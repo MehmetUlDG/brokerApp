@@ -1,0 +1,18 @@
+# payment-service environment variables
+# Copy this file to .env and fill in the values.
+
+# PostgreSQL — shared with broker-backend
+DATABASE_URL=postgres://broker_user:broker_secret@localhost:5432/broker_db?sslmode=disable
+
+# Kafka — shared broker
+KAFKA_BROKERS=localhost:9092
+
+# Stripe credentials (get from https://dashboard.stripe.com/apikeys)
+STRIPE_SECRET_KEY=sk_test_REPLACE_ME
+STRIPE_WEBHOOK_SECRET=whsec_REPLACE_ME
+
+# gRPC server port (broker-backend connects to this)
+GRPC_PORT=50051
+
+# HTTP server port (Stripe webhook endpoint)
+HTTP_PORT=8081

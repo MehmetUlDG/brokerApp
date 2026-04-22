@@ -1,0 +1,434 @@
+{
+  "info": {
+    "_postman_id": "payment-service-collection-v1",
+    "name": "Payment Service",
+    "description": "BrokerApp — payment-service koleksiyonu.\n\n## Servisler\n- **gRPC** → port `50051` (Postman gRPC sekmesi)\n- **HTTP** → port `8081` (Stripe Webhook + Health Check)\n\n## Değişkenler\n- `grpc_host` : `localhost:50051`\n- `http_base`  : `http://localhost:8081`\n- `user_id`    : Test UUID\n- `pm_id`      : Stripe PaymentMethod ID (test: `pm_card_visa`)\n- `stripe_acc` : Stripe Connected Account ID",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "grpc_host",  "value": "localhost:50051",                       "type": "string" },
+    { "key": "http_base",  "value": "http://localhost:8081",                 "type": "string" },
+    { "key": "user_id",    "value": "00000000-0000-0000-0000-000000000001",  "type": "string" },
+    { "key": "pm_id",      "value": "pm_card_visa",                         "type": "string" },
+    { "key": "stripe_acc", "value": "acct_test_placeholder",                "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "HTTP — Health & Webhook",
+      "description": "HTTP server (port 8081) endpoints: sağlık kontrolü ve Stripe webhook.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{http_base}}/health",
+              "host": ["{{http_base}}"],
+              "path": ["health"]
+            },
+            "description": "Servisin ayakta olup olmadığını kontrol eder. `{\"status\":\"ok\"}` döner."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\"status\":\"ok\"}"
+            }
+          ]
+        },
+        {
+          "name": "Stripe Webhook — payment_intent.succeeded",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",    "value": "application/json" },
+              { "key": "Stripe-Signature", "value": "t=1234567890,v1=REPLACE_WITH_REAL_SIG,v0=REPLACE_WITH_REAL_SIG", "description": "stripe listen --forward-to ile üretilen imzayı kullanın" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_test_webhook\",\n  \"type\": \"payment_intent.succeeded\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"pi_test_payment_intent_id\",\n      \"amount\": 10000,\n      \"currency\": \"usd\",\n      \"status\": \"succeeded\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{http_base}}/stripe/webhook",
+              "host": ["{{http_base}}"],
+              "path": ["stripe", "webhook"]
+            },
+            "description": "Stripe'dan gelen `payment_intent.succeeded` event'ini simüle eder.\n\n⚠️  **Gerçek imza gerekir.** Yerel test için:\n```\nstripe listen --forward-to localhost:8081/stripe/webhook\n```\nkomutunu çalıştırın; CLI otomatik imzalı istek gönderir."
+          },
+          "response": [
+            {
+              "name": "200 OK (imza geçerli)",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "body": ""
+            },
+            {
+              "name": "400 Bad Request (imza geçersiz)",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "body": "invalid signature"
+            }
+          ]
+        },
+        {
+          "name": "Stripe Webhook — payout.paid",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",    "value": "application/json" },
+              { "key": "Stripe-Signature", "value": "t=1234567890,v1=REPLACE_WITH_REAL_SIG,v0=REPLACE_WITH_REAL_SIG" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_test_payout\",\n  \"type\": \"payout.paid\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"po_test_payout_id\",\n      \"amount\": 5000,\n      \"currency\": \"usd\",\n      \"status\": \"paid\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{http_base}}/stripe/webhook",
+              "host": ["{{http_base}}"],
+              "path": ["stripe", "webhook"]
+            },
+            "description": "Stripe'dan gelen `payout.paid` event'ini simüle eder. TX durumu COMPLETED'a güncellenir."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "gRPC — Deposit",
+      "description": "Kullanıcının USD bakiyesine para yatırma (PaymentIntent via Stripe).\n\n**Proto RPC:** `payment.PaymentService/Deposit`\n\nPostman'da **New > gRPC Request** oluşturup proto dosyasını yükleyin ya da `grpcurl` komutlarını kullanın.",
+      "item": [
+        {
+          "name": "Deposit — Başarılı (Geçerli Kart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"amount\": \"100.00\",\n  \"currency\": \"usd\",\n  \"stripe_payment_method_id\": \"{{pm_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Deposit",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Deposit"]
+            },
+            "description": "## Deposit RPC\n\nBeklenen başarılı yanıt:\n```json\n{\n  \"transaction_id\": \"<uuid>\",\n  \"status\": \"COMPLETED\"\n}\n```\n\n### grpcurl ile test:\n```bash\ngrpcurl -plaintext \\\n  -d '{\n    \"user_id\":\"{{user_id}}\",\n    \"amount\":\"100.00\",\n    \"currency\":\"usd\",\n    \"stripe_payment_method_id\":\"pm_card_visa\"\n  }' \\\n  localhost:50051 payment.PaymentService/Deposit\n```\n\n### Akış:\n1. PENDING TX kaydı oluşturulur\n2. Stripe PaymentIntent tetiklenir\n3. Başarıda → wallet güncellenir, TX → COMPLETED\n4. `deposit.completed` Kafka event'i yayımlanır"
+          },
+          "response": [
+            {
+              "name": "COMPLETED",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"transaction_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"COMPLETED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Deposit — Hata: Eksik Alan (InvalidArgument)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"amount\": \"50.00\",\n  \"currency\": \"usd\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Deposit",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Deposit"]
+            },
+            "description": "`stripe_payment_method_id` eksik. gRPC `INVALID_ARGUMENT` hatası beklenir."
+          },
+          "response": [
+            {
+              "name": "INVALID_ARGUMENT",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"code\": 3,\n  \"message\": \"user_id, amount, currency and stripe_payment_method_id are required\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Deposit — Hata: Geçersiz Amount",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"amount\": \"-50.00\",\n  \"currency\": \"usd\",\n  \"stripe_payment_method_id\": \"pm_card_visa\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Deposit",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Deposit"]
+            },
+            "description": "Negatif `amount` değeri. `invalid_amount` hatası beklenir."
+          },
+          "response": []
+        },
+        {
+          "name": "Deposit — Hata: Geçersiz user_id",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"not-a-valid-uuid\",\n  \"amount\": \"100.00\",\n  \"currency\": \"usd\",\n  \"stripe_payment_method_id\": \"pm_card_visa\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Deposit",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Deposit"]
+            },
+            "description": "UUID formatına uymayan `user_id`. `invalid_user_id` hatası beklenir."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "gRPC — Withdraw",
+      "description": "Kullanıcının USD bakiyesinden para çekme (Stripe Payout).\n\n**Proto RPC:** `payment.PaymentService/Withdraw`",
+      "item": [
+        {
+          "name": "Withdraw — Başarılı",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"amount\": \"50.00\",\n  \"currency\": \"usd\",\n  \"stripe_account_id\": \"{{stripe_acc}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Withdraw",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Withdraw"]
+            },
+            "description": "## Withdraw RPC\n\nBeklenen başarılı yanıt:\n```json\n{\n  \"transaction_id\": \"<uuid>\",\n  \"status\": \"COMPLETED\"\n}\n```\n\n### grpcurl ile test:\n```bash\ngrpcurl -plaintext \\\n  -d '{\n    \"user_id\":\"{{user_id}}\",\n    \"amount\":\"50.00\",\n    \"currency\":\"usd\",\n    \"stripe_account_id\":\"acct_test_placeholder\"\n  }' \\\n  localhost:50051 payment.PaymentService/Withdraw\n```\n\n### Akış:\n1. Wallet bakiyesi kontrol edilir (balance >= amount)\n2. PENDING TX kaydı oluşturulur\n3. Stripe Payout tetiklenir\n4. Başarıda → wallet güncellenir (balance -= amount), TX → COMPLETED\n5. `withdrawal.completed` Kafka event'i yayımlanır"
+          },
+          "response": [
+            {
+              "name": "COMPLETED",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"transaction_id\": \"660e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"COMPLETED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Withdraw — Hata: Yetersiz Bakiye",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"amount\": \"999999.00\",\n  \"currency\": \"usd\",\n  \"stripe_account_id\": \"{{stripe_acc}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Withdraw",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Withdraw"]
+            },
+            "description": "Bakiyeden fazla çekim denemesi. `insufficient balance` (INVALID_ARGUMENT) hatası beklenir."
+          },
+          "response": [
+            {
+              "name": "INVALID_ARGUMENT — insufficient balance",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"code\": 3,\n  \"message\": \"insufficient balance\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Withdraw — Hata: Eksik Alan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"amount\": \"50.00\",\n  \"currency\": \"usd\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/Withdraw",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "Withdraw"]
+            },
+            "description": "`stripe_account_id` eksik. INVALID_ARGUMENT beklenir."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "gRPC — GetHistory",
+      "description": "Kullanıcıya ait işlem geçmişini listeler (sayfalama destekli).\n\n**Proto RPC:** `payment.PaymentService/GetHistory`",
+      "item": [
+        {
+          "name": "GetHistory — Varsayılan (limit=20)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"limit\": 20,\n  \"offset\": 0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/GetHistory",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "GetHistory"]
+            },
+            "description": "## GetHistory RPC\n\nSon 20 işlemi getirir.\n\n### grpcurl ile test:\n```bash\ngrpcurl -plaintext \\\n  -d '{\"user_id\":\"{{user_id}}\",\"limit\":20,\"offset\":0}' \\\n  localhost:50051 payment.PaymentService/GetHistory\n```\n\n### Yanıt alanları (Transaction):\n| Alan | Tür | Açıklama |\n|------|-----|----------|\n| id | string | UUID |\n| user_id | string | UUID |\n| type | string | `DEPOSIT` / `WITHDRAWAL` |\n| amount | string | Decimal string |\n| currency | string | `usd` / `btc` |\n| status | string | `PENDING` / `COMPLETED` / `FAILED` |\n| stripe_ref | string | Stripe PaymentIntent/Payout ID |\n| created_at | string | ISO 8601 |"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"transactions\": [\n    {\n      \"id\": \"550e8400-e29b-41d4-a716-446655440000\",\n      \"user_id\": \"00000000-0000-0000-0000-000000000001\",\n      \"type\": \"DEPOSIT\",\n      \"amount\": \"100.00\",\n      \"currency\": \"usd\",\n      \"status\": \"COMPLETED\",\n      \"stripe_ref\": \"pi_test_payment_intent_id\",\n      \"created_at\": \"2026-04-19T10:00:00Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "GetHistory — Sayfalama (offset=20)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"limit\": 10,\n  \"offset\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/GetHistory",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "GetHistory"]
+            },
+            "description": "21-30. kayıtları getirir (offset tabanlı sayfalama)."
+          },
+          "response": []
+        },
+        {
+          "name": "GetHistory — Hata: Eksik user_id",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit\": 10,\n  \"offset\": 0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/GetHistory",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "GetHistory"]
+            },
+            "description": "`user_id` boş. INVALID_ARGUMENT beklenir."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "gRPC — GetBalance",
+      "description": "Kullanıcının USD ve BTC cüzdan bakiyesini getirir.\n\n**Proto RPC:** `payment.PaymentService/GetBalance`",
+      "item": [
+        {
+          "name": "GetBalance — Başarılı",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/GetBalance",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "GetBalance"]
+            },
+            "description": "## GetBalance RPC\n\n### grpcurl ile test:\n```bash\ngrpcurl -plaintext \\\n  -d '{\"user_id\":\"{{user_id}}\"}' \\\n  localhost:50051 payment.PaymentService/GetBalance\n```\n\nBeklenen yanıt:\n```json\n{\n  \"usd_balance\": \"150.00\",\n  \"btc_balance\": \"0.00\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"usd_balance\": \"150.00\",\n  \"btc_balance\": \"0.00\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "GetBalance — Hata: Cüzdan Bulunamadı",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/GetBalance",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "GetBalance"]
+            },
+            "description": "Var olmayan bir kullanıcı ID'si. `wallet not found` (INVALID_ARGUMENT) beklenir."
+          },
+          "response": [
+            {
+              "name": "INVALID_ARGUMENT — wallet not found",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"code\": 3,\n  \"message\": \"wallet not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "GetBalance — Hata: Eksik user_id",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{grpc_host}}/payment.PaymentService/GetBalance",
+              "host": ["{{grpc_host}}"],
+              "path": ["payment.PaymentService", "GetBalance"]
+            },
+            "description": "`user_id` boş. INVALID_ARGUMENT beklenir."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
