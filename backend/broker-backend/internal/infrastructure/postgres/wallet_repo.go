@@ -290,6 +290,90 @@ func (r *walletRepository) UpdateBalance(ctx context.Context, params domain.Upda
 }
 
 // =============================================================================
+// TransferForOrder — Atomik bakiye takası
+// =============================================================================
+
+// TransferForOrder, emir gerçekleştirme sırasında USD ve BTC bakiyesini
+// TEK bir veritabanı transaction'ı içinde ve tek seferde günceller.
+func (r *walletRepository) TransferForOrder(
+	ctx context.Context,
+	userID uuid.UUID,
+	side string,
+	quantity, price decimal.Decimal,
+) (*domain.Wallet, error) {
+	total := quantity.Mul(price)
+
+	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("wallet TransferForOrder: transaction başlatılamadı: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+	}()
+
+	rollback := func(cause error) error {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("%w; rollback hatası: %v", cause, rbErr)
+		}
+		return cause
+	}
+
+	wallet, err := r.getByUserIDForUpdateOnTx(ctx, tx, userID)
+	if err != nil {
+		return nil, rollback(err)
+	}
+
+	var newUSD, newBTC decimal.Decimal
+
+	switch side {
+	case "BUY":
+		if wallet.Balance.LessThan(total) {
+			return nil, rollback(domain.ErrInsufficientBalance)
+		}
+		newUSD = wallet.Balance.Sub(total)
+		newBTC = wallet.BTCBalance.Add(quantity)
+
+	case "SELL":
+		if wallet.BTCBalance.LessThan(quantity) {
+			return nil, rollback(domain.ErrInsufficientBalance)
+		}
+		newBTC = wallet.BTCBalance.Sub(quantity)
+		newUSD = wallet.Balance.Add(total)
+
+	default:
+		return nil, rollback(fmt.Errorf("geçersiz emir yönü: %s", side))
+	}
+
+	updateQuery := `
+		UPDATE wallets
+		SET    balance = $1,
+		       btc_balance = $2,
+		       updated_at = $3
+		WHERE  user_id = $4
+		RETURNING id, user_id, balance, btc_balance, updated_at
+	`
+
+	now := time.Now().UTC()
+	var updated domain.Wallet
+	err = tx.QueryRowxContext(ctx, updateQuery, newUSD, newBTC, now, userID).StructScan(&updated)
+	if err != nil {
+		return nil, rollback(fmt.Errorf("wallet TransferForOrder: UPDATE sorgusu başarısız: %w", err))
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, rollback(fmt.Errorf("wallet TransferForOrder: commit hatası: %w", err))
+	}
+
+	return &updated, nil
+}
+
+// =============================================================================
 // Yardımcı Fonksiyonlar
 // =============================================================================
 

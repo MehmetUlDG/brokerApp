@@ -18,6 +18,11 @@ type UserRepository interface {
 	// E-posta zaten mevcutsa ErrUserAlreadyExists döner.
 	Create(ctx context.Context, email, passwordHash, firstName, lastName string) (*User, error)
 
+	// CreateUserWithWallet, yeni bir kullanıcı kaydı ve ona bağlı sıfır bakiyeli
+	// cüzdanı tek bir veritabanı transaction'ı içinde atomik olarak oluşturur.
+	CreateUserWithWallet(ctx context.Context, email, passwordHash, firstName, lastName string) (*User, error)
+
+
 	// GetByEmail, e-posta adresine göre kullanıcı arar.
 	// Bulunamazsa ErrUserNotFound döner.
 	GetByEmail(ctx context.Context, email string) (*User, error)

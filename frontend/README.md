@@ -1,73 +1,93 @@
-# React + TypeScript + Vite
+# TradeOff - Kripto Para Borsası Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+TradeOff, modern, güvenilir ve yüksek performanslı bir kripto para borsası arayüzüdür. Hem yeni başlayanlar hem de profesyonel trader'lar için tasarlanmış olup, Binance WebSocket altyapısı sayesinde gerçek zamanlı piyasa verileri ve kesintisiz işlem imkanı sunar.
 
-Currently, two official plugins are available:
+![TradeOff Demo](./public/demo.webp)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🚀 Özellikler
 
-## React Compiler
+- **Modern ve Profesyonel Arayüz:** Kullanıcı dostu, "Light" ve "Dark" tema destekli, tamamen duyarlı (responsive) tasarım.
+- **Gerçek Zamanlı Piyasa Verileri:** Binance WebSocket entegrasyonu ile BTC/USDT (ve yakında daha fazlası) için milisaniyelik gecikmesiz canlı fiyat güncellemeleri.
+- **Gelişmiş Grafikler:** `lightweight-charts` ile profesyonel ve etkileşimli fiyat trend grafikleri.
+- **Korumalı Rotalar (Protected Routes):** Kullanıcı oturumu gerektiren sayfalara Next.js middleware JWT kontrolleriyle güvenli erişim.
+- **Cüzdan Yönetimi:** Bakiye görüntüleme, işlem geçmişi ve Stripe entegrasyonuna sahip altyapı ile para yatırma / çekme simülasyonları.
+- **Gelişmiş Form Doğrulama:** `react-hook-form` ve `zod` kullanılarak hata toleranslı ve hızlı form yönetimi.
+- **Global State:** Zustand ile performanslı ve hafif global state (Theme, Auth, Wallet, Trade) yönetimi.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠 Kullanılan Teknolojiler
 
-## Expanding the ESLint configuration
+- **Core:** [Next.js 14+](https://nextjs.org/) & [React 18](https://react.dev/)
+- **Dil:** TypeScript
+- **Stil & Tasarım Sistemi:** Tailwind CSS v4, CSS Variables, Lucide React (İkonlar)
+- **State Yönetimi:** [Zustand](https://github.com/pmndrs/zustand)
+- **Veri Çekme & API:** Axios
+- **Form & Doğrulama:** React Hook Form & Zod
+- **Grafikler:** [Lightweight Charts](https://tradingview.github.io/lightweight-charts/) (TradingView)
+- **Tarih Formatlama:** date-fns
+- **Ödeme & Cüzdan:** Stripe (React Stripe.js)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 📁 Proje Yapısı
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+src/
+├── app/               # Next.js App Router yapısı (Sayfalar, Layoutlar)
+│   ├── (auth)/        # Korumalı olmayan giriş/kayıt sayfaları
+│   └── (dashboard)/   # Korumalı kontrol paneli, cüzdan ve alım/satım sayfaları
+├── components/        # Yeniden kullanılabilir React bileşenleri
+│   ├── auth/          # Kimlik doğrulama formları
+│   ├── dashboard/     # Ana panel widgetları ve grafikleri
+│   ├── landing/       # Ana sayfa bileşenleri
+│   ├── layout/        # Navbar, Sidebar, Footer vb.
+│   ├── trade/         # Emir defteri, fiyat grafiği, alım-satım formu
+│   ├── ui/            # Button, Input, Card vb. temel UI elementleri
+│   └── wallet/        # Cüzdan bakiyesi ve işlem formları
+├── hooks/             # Özel React Hook'ları (useAuth, useLivePrice, useWallet vb.)
+├── lib/               # Utility fonksiyonlar, sabitler ve API servisleri
+├── stores/            # Zustand global state dosyaları
+└── types/             # TypeScript domain interface ve type tanımlamaları
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## ⚙️ Kurulum ve Çalıştırma
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Gereksinimler
+- Node.js 18.x veya üzeri
+- npm (veya yarn/pnpm)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Kurulum Adımları
+
+1. Repoyu bilgisayarınıza klonlayın ve dizine gidin:
+   ```bash
+   cd brokerApp/frontend
+   ```
+
+2. Bağımlılıkları yükleyin:
+   ```bash
+   npm install
+   ```
+
+3. Çevresel değişkenleri (Environment Variables) ayarlayın. Ana dizinde bir `.env.local` dosyası oluşturun ve aşağıdaki değişkenleri tanımlayın:
+   ```env
+   NEXT_PUBLIC_API_URL=http://localhost:8080   # Backend API adresiniz
+   NEXT_PUBLIC_WS_URL=wss://stream.binance.com:443/ws/btcusdt@trade
+   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_... # Stripe test key
+   ```
+
+4. Geliştirme sunucusunu başlatın:
+   ```bash
+   npm run dev
+   ```
+
+5. Uygulamayı incelemek için tarayıcınızda [http://localhost:3000](http://localhost:3000) adresine gidin.
+
+## 📦 Build ve Production Ortamı
+
+Uygulamayı üretim (production) ortamı için derlemek ve çalıştırmak için:
+
+```bash
+npm run build
+npm run start
 ```
+
+---
+
+*Geliştirme süreci boyunca backend (mikroservis mimarisi) ile tam uyumlu çalışacak şekilde REST API kontratlarına göre tasarlanmış ve optimize edilmiştir.*

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	pbpayment "payment-service/gen/payment"
@@ -29,12 +29,12 @@ import (
 // =============================================================================
 
 type config struct {
-	DatabaseURL          string
-	KafkaBrokers         []string
-	StripeSecretKey      string
-	StripeWebhookSecret  string
-	GRPCPort             string
-	HTTPPort             string
+	DatabaseURL         string
+	KafkaBrokers        []string
+	StripeSecretKey     string
+	StripeWebhookSecret string
+	GRPCPort            string
+	HTTPPort            string
 }
 
 func loadConfig() config {
@@ -66,7 +66,7 @@ func loadConfig() config {
 func mustEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatalf("FATAL: environment variable %s is required", key)
+		panic(fmt.Sprintf("environment variable %s is required", key))
 	}
 	return v
 }
@@ -76,61 +76,62 @@ func mustEnv(key string) string {
 // =============================================================================
 
 func main() {
+	logger, _ := zap.NewProduction()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "zap logger sync error: %v\n", err)
+		}
+	}()
+
 	cfg := loadConfig()
 
-	// ── PostgreSQL pool ──────────────────────────────────────────────────────
-	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("FATAL: cannot connect to postgres: %v", err)
+		logger.Fatal("postgres connection failed", zap.Error(err))
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(context.Background()); err != nil {
-		log.Fatalf("FATAL: postgres ping failed: %v", err)
+	if err := pool.Ping(ctx); err != nil {
+		logger.Fatal("postgres ping failed", zap.Error(err))
 	}
-	log.Println("✅ PostgreSQL bağlantısı kuruldu")
+	logger.Info("postgres connection established")
 
-	// ── Repos ────────────────────────────────────────────────────────────────
 	txRepo := pginfra.NewTransactionRepo(pool)
 	walletRepo := pginfra.NewWalletRepo(pool)
 
-	// ── Stripe adapter ───────────────────────────────────────────────────────
 	stripeAdapter := stripeinfra.NewStripeAdapter(cfg.StripeSecretKey)
 
-	// ── Kafka publisher ──────────────────────────────────────────────────────
 	publisher := kafkainfra.NewPaymentPublisher(cfg.KafkaBrokers)
 	defer func() {
 		if err := publisher.Close(); err != nil {
-			log.Printf("⚠  Kafka writer kapatılırken hata: %v", err)
+			logger.Warn("kafka writer close error", zap.Error(err))
 		}
 	}()
-	log.Printf("✅ Kafka publisher hazır (brokers=%v)", cfg.KafkaBrokers)
+	logger.Info("kafka publisher ready", zap.Strings("brokers", cfg.KafkaBrokers))
 
-	// ── Usecase ──────────────────────────────────────────────────────────────
-	uc := usecase.NewPaymentUsecase(txRepo, walletRepo, stripeAdapter, publisher)
+	uc := usecase.NewPaymentUsecase(txRepo, walletRepo, stripeAdapter, publisher, logger)
 
-	// ── gRPC server ──────────────────────────────────────────────────────────
 	grpcSrv := grpc.NewServer()
-	pbpayment.RegisterPaymentServiceServer(grpcSrv, grpcserver.NewPaymentServer(uc))
+	pbpayment.RegisterPaymentServiceServer(grpcSrv, grpcserver.NewPaymentServer(uc, logger))
 
 	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.GRPCPort))
 	if err != nil {
-		log.Fatalf("FATAL: gRPC listener başlatılamadı: %v", err)
+		logger.Fatal("gRPC listener start failed", zap.Error(err))
 	}
 
 	go func() {
-		log.Printf("🚀 gRPC server başlatıldı — port %s", cfg.GRPCPort)
+		logger.Info("gRPC server started", zap.String("port", cfg.GRPCPort))
 		if err := grpcSrv.Serve(grpcListener); err != nil {
-			log.Printf("❌ gRPC server hatası: %v", err)
+			logger.Error("gRPC server error", zap.Error(err))
 		}
 	}()
 
-	// ── HTTP server (Stripe webhook) ─────────────────────────────────────────
 	mux := http.NewServeMux()
-	webhookHandler := httphandler.NewWebhookHandler(txRepo, cfg.StripeWebhookSecret)
+	webhookHandler := httphandler.NewWebhookHandler(txRepo, cfg.StripeWebhookSecret, logger)
 	webhookHandler.RegisterRoutes(mux)
 
-	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -145,27 +146,31 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("🚀 HTTP server başlatıldı — port %s", cfg.HTTPPort)
+		logger.Info("HTTP server started", zap.String("port", cfg.HTTPPort))
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("❌ HTTP server hatası: %v", err)
+			logger.Error("HTTP server error", zap.Error(err))
 		}
 	}()
 
-	// ── Graceful shutdown ────────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-quit
-	log.Printf("⏹  Kapatma sinyali alındı: %s — graceful shutdown başlıyor", sig)
+	logger.Info("shutdown signal received", zap.String("signal", sig.String()))
 
-	// HTTP server'ı kapat
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("⚠  HTTP shutdown hatası: %v", err)
+		logger.Error("HTTP shutdown error", zap.Error(err))
 	}
 
-	// gRPC server'ı kapat (in-flight request'lerin bitmesi beklenir)
 	grpcSrv.GracefulStop()
 
-	log.Println("✅ payment-service kapatıldı")
+	if err := publisher.Close(); err != nil {
+		logger.Error("Kafka publisher close error", zap.Error(err))
+	}
+
+	pool.Close()
+
+	logger.Info("payment-service shutdown completed")
 }

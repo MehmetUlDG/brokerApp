@@ -19,6 +19,7 @@ type Wallet struct {
 	UserID     uuid.UUID       `db:"user_id"`
 	Balance    decimal.Decimal `db:"balance"`     // USD bakiyesi
 	BTCBalance decimal.Decimal `db:"btc_balance"` // BTC bakiyesi
+	Version    int             `db:"version"`     // Optimistic locking versiyonu
 	UpdatedAt  time.Time       `db:"updated_at"`
 }
 
@@ -46,6 +47,7 @@ var (
 	ErrWalletNotFound      = NewPaymentError("wallet_not_found", "wallet not found")
 	ErrInsufficientBalance = NewPaymentError("insufficient_balance", "insufficient balance")
 	ErrInvalidAmount       = NewPaymentError("invalid_amount", "amount must be greater than zero")
+	ErrWalletConflict      = NewPaymentError("wallet_conflict", "wallet version conflict, please retry")
 )
 
 // =============================================================================

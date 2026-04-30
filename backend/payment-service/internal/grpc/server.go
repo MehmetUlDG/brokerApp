@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -20,12 +21,13 @@ import (
 // Her RPC, usecase katmanına delege edilir.
 type PaymentServer struct {
 	payment.UnimplementedPaymentServiceServer
-	uc *usecase.PaymentUsecase
+	uc     *usecase.PaymentUsecase
+	logger *zap.Logger
 }
 
 // NewPaymentServer, yeni bir PaymentServer döner.
-func NewPaymentServer(uc *usecase.PaymentUsecase) *PaymentServer {
-	return &PaymentServer{uc: uc}
+func NewPaymentServer(uc *usecase.PaymentUsecase, logger *zap.Logger) *PaymentServer {
+	return &PaymentServer{uc: uc, logger: logger}
 }
 
 // =============================================================================
@@ -42,11 +44,19 @@ func (s *PaymentServer) Deposit(
 
 	tx, err := s.uc.Deposit(ctx, req.UserId, req.Amount, req.Currency, req.StripePaymentMethodId)
 	if err != nil {
+		s.logger.Error("Deposit RPC failed",
+			zap.String("user_id", req.UserId),
+			zap.String("amount", req.Amount),
+			zap.Error(err))
 		if isValidationError(err) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Errorf(codes.Internal, "deposit failed: %v", err)
 	}
+
+	s.logger.Info("Deposit RPC success",
+		zap.String("user_id", req.UserId),
+		zap.String("tx_id", tx.ID.String()))
 
 	return &payment.DepositResponse{
 		TransactionId: tx.ID.String(),
@@ -68,6 +78,10 @@ func (s *PaymentServer) Withdraw(
 
 	tx, err := s.uc.Withdraw(ctx, req.UserId, req.Amount, req.Currency, req.StripeAccountId)
 	if err != nil {
+		s.logger.Error("Withdraw RPC failed",
+			zap.String("user_id", req.UserId),
+			zap.String("amount", req.Amount),
+			zap.Error(err))
 		if errors.Is(err, domain.ErrInsufficientBalance) {
 			return nil, status.Error(codes.InvalidArgument, "insufficient balance")
 		}
@@ -76,6 +90,10 @@ func (s *PaymentServer) Withdraw(
 		}
 		return nil, status.Errorf(codes.Internal, "withdraw failed: %v", err)
 	}
+
+	s.logger.Info("Withdraw RPC success",
+		zap.String("user_id", req.UserId),
+		zap.String("tx_id", tx.ID.String()))
 
 	return &payment.WithdrawResponse{
 		TransactionId: tx.ID.String(),

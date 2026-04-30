@@ -31,7 +31,7 @@ func NewWalletRepo(pool *pgxpool.Pool) *WalletRepo {
 // GetByUserID, bir kullanıcıya ait cüzdanı döner.
 func (r *WalletRepo) GetByUserID(ctx context.Context, userID uuid.UUID) (*domain.Wallet, error) {
 	const query = `
-		SELECT id, user_id, balance, btc_balance, updated_at
+		SELECT id, user_id, balance, btc_balance, version, updated_at
 		FROM wallets
 		WHERE user_id = $1
 	`
@@ -40,32 +40,46 @@ func (r *WalletRepo) GetByUserID(ctx context.Context, userID uuid.UUID) (*domain
 }
 
 // UpdateBalance, cüzdan bakiyesine usdDelta ve btcDelta uygular.
-// SELECT … FOR UPDATE ile pessimistic lock alınır; bakiye negatife düşmesi engellenir.
+// Optimistic locking kullanır; version kontrolü yapar.
 func (r *WalletRepo) UpdateBalance(ctx context.Context, userID uuid.UUID, usdDelta, btcDelta decimal.Decimal) error {
+	const maxRetries = 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := r.updateBalanceWithOptimisticLock(ctx, userID, usdDelta, btcDelta)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, domain.ErrWalletConflict) {
+			return err
+		}
+	}
+	return domain.ErrWalletConflict
+}
+
+// updateBalanceWithOptimisticLock, tek deneme yapar ve version kontrolü uygular.
+func (r *WalletRepo) updateBalanceWithOptimisticLock(ctx context.Context, userID uuid.UUID, usdDelta, btcDelta decimal.Decimal) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("WalletRepo.UpdateBalance: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Pessimistic lock — aynı anda birden fazla işlemin aynı satırı değiştirmesini engeller.
-	const lockQuery = `SELECT id, balance, btc_balance FROM wallets WHERE user_id = $1 FOR UPDATE`
+	const lockQuery = `SELECT id, balance, btc_balance, version FROM wallets WHERE user_id = $1 FOR UPDATE`
 	var (
 		walletID   uuid.UUID
-		usdBalance decimal.Decimal
-		btcBalance decimal.Decimal
 		usdStr     string
 		btcStr     string
+		version    int
 	)
-	err = tx.QueryRow(ctx, lockQuery, userID).Scan(&walletID, &usdStr, &btcStr)
+	err = tx.QueryRow(ctx, lockQuery, userID).Scan(&walletID, &usdStr, &btcStr, &version)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ErrWalletNotFound
 		}
 		return fmt.Errorf("WalletRepo.UpdateBalance: lock: %w", err)
 	}
-	usdBalance, _ = decimal.NewFromString(usdStr)
-	btcBalance, _ = decimal.NewFromString(btcStr)
+
+	usdBalance, _ := decimal.NewFromString(usdStr)
+	btcBalance, _ := decimal.NewFromString(btcStr)
 
 	newUSD := usdBalance.Add(usdDelta)
 	newBTC := btcBalance.Add(btcDelta)
@@ -76,11 +90,15 @@ func (r *WalletRepo) UpdateBalance(ctx context.Context, userID uuid.UUID, usdDel
 
 	const updateQuery = `
 		UPDATE wallets
-		SET balance = $2, btc_balance = $3, updated_at = NOW()
-		WHERE id = $1
+		SET balance = $2, btc_balance = $3, version = version + 1, updated_at = NOW()
+		WHERE id = $1 AND version = $4
 	`
-	if _, err = tx.Exec(ctx, updateQuery, walletID, newUSD.String(), newBTC.String()); err != nil {
+	ct, err := tx.Exec(ctx, updateQuery, walletID, newUSD.String(), newBTC.String(), version)
+	if err != nil {
 		return fmt.Errorf("WalletRepo.UpdateBalance: update: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return domain.ErrWalletConflict
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -99,7 +117,7 @@ func scanWallet(row rowScanner) (*domain.Wallet, error) {
 		usdStr  string
 		btcStr  string
 	)
-	err := row.Scan(&w.ID, &w.UserID, &usdStr, &btcStr, &w.UpdatedAt)
+	err := row.Scan(&w.ID, &w.UserID, &usdStr, &btcStr, &w.Version, &w.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrWalletNotFound

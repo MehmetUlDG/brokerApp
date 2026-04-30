@@ -4,30 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
+	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/stripe/stripe-go/v76/webhook"
 
 	"payment-service/internal/domain"
 )
 
-// =============================================================================
-// WebhookHandler
-// =============================================================================
+const webhookTimeout = 30 * time.Second
 
 // WebhookHandler, Stripe'ın HTTP webhook callback'lerini işler.
 // İmza doğrulaması her istek için yapılır.
 type WebhookHandler struct {
 	txRepo        domain.TransactionRepository
 	webhookSecret string
+	logger        *zap.Logger
 }
 
 // NewWebhookHandler, yeni bir WebhookHandler döner.
-func NewWebhookHandler(txRepo domain.TransactionRepository, webhookSecret string) *WebhookHandler {
+func NewWebhookHandler(txRepo domain.TransactionRepository, webhookSecret string, logger *zap.Logger) *WebhookHandler {
 	return &WebhookHandler{
 		txRepo:        txRepo,
 		webhookSecret: webhookSecret,
+		logger:        logger,
 	}
 }
 
@@ -44,59 +46,59 @@ func (h *WebhookHandler) RegisterRoutes(mux *http.ServeMux) {
 //   - Diğer event tipler sessizce görmezden gelinir.
 //   - Her durumda 200 döner (Stripe yeniden denemesini önlemek için).
 func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("⚠  Webhook: body okunamadı: %v", err)
+		h.logger.Warn("Webhook: body okunamadı", zap.Error(err))
 		http.Error(w, "request body error", http.StatusBadRequest)
 		return
 	}
 
 	sigHeader := r.Header.Get("Stripe-Signature")
 	event, err := webhook.ConstructEventWithOptions(body, sigHeader, h.webhookSecret, webhook.ConstructEventOptions{
-    IgnoreAPIVersionMismatch: true,
-})
+		IgnoreAPIVersionMismatch: true,
+	})
 	if err != nil {
-		log.Printf("⚠  Webhook: imza doğrulama başarısız: %v", err)
+		h.logger.Warn("Webhook: imza doğrulama başarısız", zap.Error(err))
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
 	}
 
-	// Non-blocking: 200 hemen döner; Stripe SLA'sı korunur.
 	go h.processEvent(string(event.Type), event.Data.Raw)
 
 	w.WriteHeader(http.StatusOK)
 }
 
 // processEvent, event tipine göre ilgili DB güncellemesini yapar.
-// Background context kullanılır; request yaşam döngüsünden bağımsızdır.
+// 30 saniye timeout ile çalışır.
 func (h *WebhookHandler) processEvent(eventType string, raw json.RawMessage) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), webhookTimeout)
+	defer cancel()
 
 	switch eventType {
 	case "payment_intent.succeeded":
 		var data struct {
-			ID string `json:"id"` // PaymentIntent ID = StripeRef
+			ID string `json:"id"`
 		}
 		if err := json.Unmarshal(raw, &data); err != nil {
-			log.Printf("❌ Webhook: payment_intent.succeeded parse hatası: %v", err)
+			h.logger.Error("Webhook: payment_intent.succeeded parse hatası", zap.Error(err))
 			return
 		}
 		h.markCompleted(ctx, data.ID)
 
 	case "payout.paid":
 		var data struct {
-			ID string `json:"id"` // Payout ID = StripeRef
+			ID string `json:"id"`
 		}
 		if err := json.Unmarshal(raw, &data); err != nil {
-			log.Printf("❌ Webhook: payout.paid parse hatası: %v", err)
+			h.logger.Error("Webhook: payout.paid parse hatası", zap.Error(err))
 			return
 		}
 		h.markCompleted(ctx, data.ID)
 
 	default:
-		log.Printf("ℹ  Webhook: bilinmeyen event tipi, atlanıyor: %s", eventType)
+		h.logger.Debug("Webhook: bilinmeyen event tipi", zap.String("event_type", eventType))
 	}
 }
 
@@ -104,19 +106,24 @@ func (h *WebhookHandler) processEvent(eventType string, raw json.RawMessage) {
 func (h *WebhookHandler) markCompleted(ctx context.Context, stripeRef string) {
 	tx, err := h.txRepo.GetByStripeRef(ctx, stripeRef)
 	if err != nil {
-		log.Printf("❌ Webhook: TX bulunamadı (stripeRef=%s): %v", stripeRef, err)
+		h.logger.Error("Webhook: TX bulunamadı", zap.String("stripe_ref", stripeRef), zap.Error(err))
 		return
 	}
 
 	if tx.Status == domain.TransactionStatusCompleted {
-		log.Printf("ℹ  Webhook: TX zaten COMPLETED, atlanıyor (id=%s)", tx.ID)
+		h.logger.Debug("Webhook: TX zaten COMPLETED", zap.String("tx_id", tx.ID.String()))
 		return
 	}
 
 	if err := h.txRepo.UpdateStatus(ctx, tx.ID, domain.TransactionStatusCompleted, stripeRef); err != nil {
-		log.Printf("❌ Webhook: UpdateStatus başarısız (id=%s): %v", tx.ID, err)
+		h.logger.Error("Webhook: UpdateStatus başarısız",
+			zap.String("tx_id", tx.ID.String()),
+			zap.String("stripe_ref", stripeRef),
+			zap.Error(err))
 		return
 	}
 
-	log.Printf("✅ Webhook: TX COMPLETED yapıldı (id=%s, stripeRef=%s)", tx.ID, stripeRef)
+	h.logger.Info("Webhook: TX COMPLETED yapıldı",
+		zap.String("tx_id", tx.ID.String()),
+		zap.String("stripe_ref", stripeRef))
 }

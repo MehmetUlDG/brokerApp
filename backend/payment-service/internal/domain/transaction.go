@@ -19,6 +19,7 @@ const (
 	TransactionTypeDeposit    TransactionType = "DEPOSIT"
 	TransactionTypeWithdrawal TransactionType = "WITHDRAWAL"
 	TransactionTypeTransfer   TransactionType = "TRANSFER"
+	TransactionTypeRefund     TransactionType = "REFUND"
 )
 
 // =============================================================================

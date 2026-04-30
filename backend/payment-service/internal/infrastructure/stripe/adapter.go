@@ -1,12 +1,14 @@
 package stripe
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/shopspring/decimal"
 	stripe "github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/paymentintent"
 	"github.com/stripe/stripe-go/v76/payout"
+	"github.com/stripe/stripe-go/v76/refund"
 
 	"payment-service/internal/domain"
 )
@@ -34,6 +36,15 @@ func (a *StripeAdapter) CreatePaymentIntent(
 	amount decimal.Decimal,
 	currency, paymentMethodID string,
 ) (clientSecret, stripeID string, err error) {
+	return a.CreatePaymentIntentWithContext(context.Background(), amount, currency, paymentMethodID)
+}
+
+// CreatePaymentIntentWithContext, Stripe PaymentIntent oluşturur ve onaylar (context ile).
+func (a *StripeAdapter) CreatePaymentIntentWithContext(
+	ctx context.Context,
+	amount decimal.Decimal,
+	currency, paymentMethodID string,
+) (clientSecret, stripeID string, err error) {
 	stripe.Key = a.secretKey
 
 	// Stripe kuruş (cents) cinsinden çalışır: 1 USD = 100 cents.
@@ -46,6 +57,9 @@ func (a *StripeAdapter) CreatePaymentIntent(
 		Confirm:       stripe.Bool(true),
 		// Off-session = kullanıcı aktif oturum yokken ödeme onayı
 		OffSession: stripe.Bool(true),
+		Params: stripe.Params{
+			Context: ctx,
+		},
 	}
 
 	pi, err := paymentintent.New(params)
@@ -64,6 +78,15 @@ func (a *StripeAdapter) CreatePayout(
 	amount decimal.Decimal,
 	currency, stripeAccountID string,
 ) (stripeID string, err error) {
+	return a.CreatePayoutWithContext(context.Background(), amount, currency, stripeAccountID)
+}
+
+// CreatePayoutWithContext, Stripe Payout (çekim) oluşturur (context ile).
+func (a *StripeAdapter) CreatePayoutWithContext(
+	ctx context.Context,
+	amount decimal.Decimal,
+	currency, stripeAccountID string,
+) (stripeID string, err error) {
 	stripe.Key = a.secretKey
 
 	cents := amount.Mul(decimal.NewFromInt(100)).IntPart()
@@ -72,6 +95,9 @@ func (a *StripeAdapter) CreatePayout(
 		Amount:      stripe.Int64(cents),
 		Currency:    stripe.String(currency),
 		Destination: stripe.String(stripeAccountID),
+		Params: stripe.Params{
+			Context: ctx,
+		},
 	}
 
 	po, err := payout.New(params)
@@ -80,6 +106,22 @@ func (a *StripeAdapter) CreatePayout(
 	}
 
 	return po.ID, nil
+}
+
+// RefundPayment, Stripe PaymentIntent için tam refund (iade) oluşturur.
+// paymentIntentID: Stripe PaymentIntent ID (pi_...).
+func (a *StripeAdapter) RefundPayment(paymentIntentID string) error {
+	stripe.Key = a.secretKey
+
+	params := &stripe.RefundParams{
+		PaymentIntent: stripe.String(paymentIntentID),
+	}
+
+	_, err := refund.New(params)
+	if err != nil {
+		return wrapStripeError("RefundPayment", err)
+	}
+	return nil
 }
 
 // =============================================================================

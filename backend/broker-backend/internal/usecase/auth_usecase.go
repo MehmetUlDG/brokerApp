@@ -51,16 +51,10 @@ func (a *authUsecase) Register(ctx context.Context, params domain.RegisterParams
 		return nil, "", fmt.Errorf("şifre hashlenemedi: %w", err)
 	}
 
-	// 2. Kullanıcıyı kaydet
-	user, err := a.userRepo.Create(ctx, params.Email, string(hash), params.FirstName, params.LastName)
+	// 2. Kullanıcıyı ve cüzdanını tek bir transaction içinde (atomik) kaydet
+	user, err := a.userRepo.CreateUserWithWallet(ctx, params.Email, string(hash), params.FirstName, params.LastName)
 	if err != nil {
-		return nil, "", err // domain.ErrUserAlreadyExists vb. zaten doğru sarmalanmış
-	}
-
-	// 3. Kullanıcıya ait cüzdanı oluştur (sıfır bakiye ile başlar)
-	// NOT: Gerçek prodüksiyonda bu işlem aynı DB transaction içinde yapılmalıdır.
-	if _, err = a.walletRepo.Create(ctx, user.ID); err != nil {
-		return nil, "", fmt.Errorf("kullanıcı kaydedildi ancak cüzdan oluşturulamadı: %w", err)
+		return nil, "", err // domain.ErrUserAlreadyExists vb.
 	}
 
 	// 4. JWT oluştur ve döndür

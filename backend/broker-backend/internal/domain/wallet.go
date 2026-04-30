@@ -111,6 +111,9 @@ type WalletRepository interface {
 	// CreateWithTx, aktif bir transaction içinde cüzdan oluşturur.
 	// Kullanıcı kaydı ile cüzdan oluşturma aynı tx içinde yapılacaksa kullanılır.
 	CreateWithTx(ctx context.Context, tx interface{}, userID uuid.UUID) (*Wallet, error)
+
+	// TransferForOrder atomik olarak emir sırasındaki bakiye değişimini tek bir tx içinde yapar.
+	TransferForOrder(ctx context.Context, userID uuid.UUID, side string, quantity, price decimal.Decimal) (*Wallet, error)
 }
 
 // =============================================================================
