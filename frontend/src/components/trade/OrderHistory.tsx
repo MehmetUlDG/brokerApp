@@ -3,16 +3,20 @@
 import { Card } from '@/components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
-import { useTradeStore } from '@/stores/tradeStore';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useOrders } from '@/hooks/useOrders';
 import { format } from 'date-fns';
 
 export function OrderHistory() {
-  const orders = useTradeStore((state) => state.orders);
+  const { orders, ordersLoading } = useOrders();
 
   return (
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--border)] p-4">
+      <div className="border-b border-[var(--border)] p-4 flex items-center justify-between">
         <h3 className="font-bold text-[var(--text-primary)]">Emir Geçmişi</h3>
+        {ordersLoading && (
+          <span className="text-xs text-[var(--text-muted)] animate-pulse">Güncelleniyor...</span>
+        )}
       </div>
       <Table>
         <TableHeader>
@@ -27,7 +31,17 @@ export function OrderHistory() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {orders.length === 0 ? (
+          {ordersLoading && orders.length === 0 ? (
+            <>
+              {[...Array(4)].map((_, i) => (
+                <TableRow key={i}>
+                  {[...Array(7)].map((_, j) => (
+                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </>
+          ) : orders.length === 0 ? (
             <TableRow>
               <TableCell colSpan={7} className="text-center text-[var(--text-muted)] py-12">
                 Emir geçmişiniz bulunmuyor.

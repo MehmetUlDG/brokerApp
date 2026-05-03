@@ -23,6 +23,11 @@ import (
 	"github.com/yourusername/broker-backend/internal/infrastructure/outbox"
 	"github.com/yourusername/broker-backend/internal/infrastructure/postgres"
 	"github.com/yourusername/broker-backend/internal/usecase"
+
+	pbpayment "payment-service/gen/payment"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
@@ -55,9 +60,9 @@ func main() {
 	log.Println("✅ PostgreSQL bağlantısı kuruldu")
 
 	// ── Repository Katmanı ───────────────────────────────────────────────────
-	userRepo   := postgres.NewUserRepository(database)
+	userRepo := postgres.NewUserRepository(database)
 	walletRepo := postgres.NewWalletRepository(database)
-	orderRepo  := postgres.NewOrderRepository(database)
+	orderRepo := postgres.NewOrderRepository(database)
 
 	// ── Usecase Katmanı ──────────────────────────────────────────────────────
 	jwtSecret := getEnv("JWT_SECRET", "super_secret_change_this_in_production")
@@ -66,24 +71,34 @@ func main() {
 		jwtExpiry = 24 * time.Hour
 	}
 
-	authUC   := usecase.NewAuthUsecase(userRepo, walletRepo, jwtSecret, jwtExpiry)
+	authUC := usecase.NewAuthUsecase(userRepo, walletRepo, jwtSecret, jwtExpiry)
 	walletUC := usecase.NewWalletUsecase(walletRepo)
-	orderUC  := usecase.NewOrderUsecase(orderRepo)
+	orderUC := usecase.NewOrderUsecase(orderRepo)
+
+	// ── gRPC İstemcisi (Payment Service) ─────────────────────────────────────
+	paymentSvcAddr := getEnv("PAYMENT_SERVICE_ADDR", "localhost:50051")
+	paymentConn, err := grpc.NewClient(paymentSvcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	log.Printf("DEBUG payment-service addr: %s", paymentSvcAddr)
+	if err != nil {
+		log.Fatalf("❌ Payment Service gRPC bağlantı hatası: %v", err)
+	}
+	defer paymentConn.Close()
+	paymentClient := pbpayment.NewPaymentServiceClient(paymentConn)
 
 	// ── HTTP Handler Katmanı ─────────────────────────────────────────────────
-	authHandler   := handler.NewAuthHandler(authUC)
-	walletHandler := handler.NewWalletHandler(walletUC)
-	orderHandler  := handler.NewOrderHandler(orderUC)
+	authHandler := handler.NewAuthHandler(authUC)
+	walletHandler := handler.NewWalletHandler(walletUC, paymentClient)
+	orderHandler := handler.NewOrderHandler(orderUC)
 
 	// ── HTTP Router (chi) ────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
 	// Global middleware stack
 	r.Use(corsMiddleware)
-	r.Use(chimiddleware.RequestID)  // Her isteğe benzersiz ID
-	r.Use(chimiddleware.RealIP)     // X-Forwarded-For / X-Real-IP kullan
-	r.Use(chimiddleware.Logger)     // Yapılandırılabilir istek günlüğü
-	r.Use(chimiddleware.Recoverer)  // Panic → 500 (servis çökmez)
+	r.Use(chimiddleware.RequestID)                 // Her isteğe benzersiz ID
+	r.Use(chimiddleware.RealIP)                    // X-Forwarded-For / X-Real-IP kullan
+	r.Use(chimiddleware.Logger)                    // Yapılandırılabilir istek günlüğü
+	r.Use(chimiddleware.Recoverer)                 // Panic → 500 (servis çökmez)
 	r.Use(chimiddleware.Timeout(30 * time.Second)) // Global istek zaman aşımı
 
 	// Health check (herkese açık)
@@ -103,9 +118,12 @@ func main() {
 		r.Get("/wallet", walletHandler.GetWallet)
 		r.Post("/wallet/deposit", walletHandler.Deposit)
 		r.Post("/wallet/withdraw", walletHandler.Withdraw)
+		r.Get("/transactions", walletHandler.GetTransactions)
+		r.Get("/balance", walletHandler.GetBalance)
 
 		// Emir endpoint'leri
 		r.Post("/orders", orderHandler.PlaceOrder)
+		r.Get("/orders", orderHandler.GetOrders)
 	})
 
 	// ── Context + Graceful Shutdown ──────────────────────────────────────────
@@ -114,14 +132,14 @@ func main() {
 
 	// ── Outbox Processor ─────────────────────────────────────────────────────
 	kafkaBrokers := getEnv("KAFKA_BROKERS", "localhost:9092")
-	ordersTopic  := getEnv("KAFKA_TOPIC_ORDERS", "broker.orders")
+	ordersTopic := getEnv("KAFKA_TOPIC_ORDERS", "broker.orders")
 
 	outboxProcessor := outbox.NewProcessor(database, []string{kafkaBrokers}, ordersTopic)
 	go outboxProcessor.Start(ctx)
 	log.Println("✅ Outbox Processor başlatıldı")
 
 	// ── Trade Consumer (trade-executed Kafka topic) ───────────────────────────
-	tradesTopic  := getEnv("KAFKA_TOPIC_TRADES", "broker.trades")
+	tradesTopic := getEnv("KAFKA_TOPIC_TRADES", "broker.trades")
 	kafkaGroupID := getEnv("KAFKA_GROUP_ID", "broker-consumer-group")
 
 	kafkaReader := kafkago.NewReader(kafkago.ReaderConfig{
@@ -139,7 +157,7 @@ func main() {
 
 	// ── HTTP Server ──────────────────────────────────────────────────────────
 	port := getEnv("HTTP_PORT", "3000")
-	readTimeout, _  := time.ParseDuration(getEnv("HTTP_READ_TIMEOUT", "15s"))
+	readTimeout, _ := time.ParseDuration(getEnv("HTTP_READ_TIMEOUT", "15s"))
 	writeTimeout, _ := time.ParseDuration(getEnv("HTTP_WRITE_TIMEOUT", "15s"))
 
 	srv := &http.Server{
@@ -207,7 +225,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		} else {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
-		
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -221,4 +239,3 @@ func corsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-

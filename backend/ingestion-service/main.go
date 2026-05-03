@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"math"
+	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -36,11 +37,19 @@ var kafkaWriter *kafka.Writer
 
 func initKafkaWriter() {
 	// Kafka Broker adresi Docker Compose üzerinden sağlanır (Örn: localhost:9092)
+	brokerAddr := getEnv("KAFKA_BROKERS", "kafka:29092")
 	kafkaWriter = &kafka.Writer{
-		Addr:     kafka.TCP("localhost:9092"), // Geliştirme ortamı için localhost
+		Addr:     kafka.TCP(brokerAddr), // Geliştirme ortamı için localhost
 		Topic:    "live-prices",
 		Balancer: &kafka.LeastBytes{},
 	}
+}
+
+func getEnv(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
 }
 
 func main() {
@@ -57,15 +66,15 @@ func main() {
 		conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 		if err != nil {
 			log.Printf("[Error] Bağlantı kurulamadı: %v", err)
-			
+
 			// Exponential Backoff Mantığı: 2^retryCount saniye bekle
 			backoffDuration := time.Duration(math.Pow(2, retryCount)) * time.Second
-			
+
 			// En fazla 60 saniye beklet
 			if backoffDuration > 60*time.Second {
 				backoffDuration = 60 * time.Second
 			}
-			
+
 			log.Printf("[Backoff] %v saniye sonra tekrar denenecek...", backoffDuration.Seconds())
 			time.Sleep(backoffDuration)
 			retryCount++

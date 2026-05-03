@@ -7,7 +7,7 @@ const protectedRoutes = ['/dashboard', '/trade', '/wallet', '/settings'];
 // Public routes that should not be accessed if already authenticated
 const publicRoutes = ['/login', '/register'];
 
-export function proxy(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const token = request.cookies.get('auth_token')?.value;
   const { pathname } = request.nextUrl;
 

@@ -1,36 +1,33 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
-import { walletApi } from '@/lib/api/wallet';
-import { Transaction } from '@/types/domain';
-import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { useWalletStore } from '@/stores/walletStore';
+import { format } from 'date-fns';
+
+const POLL_INTERVAL_MS = 15000; // 15 saniyede bir güncelle
 
 export function TransactionHistory() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const transactions = useWalletStore((state) => state.transactions);
+  const transactionsLoading = useWalletStore((state) => state.transactionsLoading);
+  const fetchTransactions = useWalletStore((state) => state.fetchTransactions);
 
   useEffect(() => {
-    async function loadTransactions() {
-      try {
-        const data = await walletApi.getTransactions();
-        setTransactions(data);
-      } catch (error) {
-        console.error('Failed to load transactions', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadTransactions();
+    fetchTransactions();
+    const intervalId = setInterval(fetchTransactions, POLL_INTERVAL_MS);
+    return () => clearInterval(intervalId);
   }, []);
 
   return (
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--border)] p-4">
+      <div className="border-b border-[var(--border)] p-4 flex items-center justify-between">
         <h3 className="font-bold text-[var(--text-primary)]">İşlem Geçmişi</h3>
+        {transactionsLoading && (
+          <span className="text-xs text-[var(--text-muted)] animate-pulse">Güncelleniyor...</span>
+        )}
       </div>
       <Table>
         <TableHeader>
@@ -42,7 +39,7 @@ export function TransactionHistory() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {loading ? (
+          {transactionsLoading && transactions.length === 0 ? (
             Array.from({ length: 3 }).map((_, i) => (
               <TableRow key={i}>
                 <TableCell><Skeleton className="h-4 w-24" /></TableCell>

@@ -92,10 +92,14 @@ type OrderRepository interface {
 	// Emir bulunamazsa ErrOrderNotFound döner.
 	GetByID(ctx context.Context, id uuid.UUID) (*Order, error)
 
+	// GetUserOrders, belirli bir kullanıcıya ait tüm emirleri döner (en yeni önce).
+	GetUserOrders(ctx context.Context, userID uuid.UUID) ([]*Order, error)
+
 	// UpdateStatus, belirtilen emrin durumunu günceller ve updated_at'i tazeler.
 	UpdateStatus(ctx context.Context, id uuid.UUID, status OrderStatus) error
 }
 
 type OrderUsecase interface {
 	PlaceOrder(ctx context.Context, params PlaceOrderParams) (*Order, error)
+	GetUserOrders(ctx context.Context, userID uuid.UUID) ([]*Order, error)
 }

@@ -14,6 +14,7 @@ export function QuickTradeWidget() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const livePrice = useTradeStore((state) => state.livePrice);
   const addOrder = useTradeStore((state) => state.addOrder);
+  const fetchOrders = useTradeStore((state) => state.fetchOrders);
   const fetchWallet = useWalletStore((state) => state.fetchWallet);
 
   const handleTrade = async (side: 'BUY' | 'SELL') => {
@@ -33,6 +34,7 @@ export function QuickTradeWidget() {
       });
       addOrder(order);
       fetchWallet(); // Bakiye güncellemesi
+      fetchOrders(); // Listeyi anında güncelle
       toast.success(`${side === 'BUY' ? 'Alım' : 'Satım'} emri başarıyla iletildi!`);
       setQuantity('');
     } catch (error: any) {

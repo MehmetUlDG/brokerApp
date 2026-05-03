@@ -6,22 +6,26 @@ export const walletApi = {
     const response = await apiClient.get<Wallet>('/api/wallet');
     return response.data;
   },
-  deposit: async (amount: string): Promise<Wallet> => {
-    const response = await apiClient.post<Wallet>('/api/wallet/deposit', { amount });
+  deposit: async (amount: string, paymentMethodId: string): Promise<{ transaction_id: string; status: string }> => {
+    const response = await apiClient.post<{ transaction_id: string; status: string }>('/api/wallet/deposit', { 
+      amount, 
+      payment_method_id: paymentMethodId 
+    });
     return response.data;
   },
-  withdraw: async (amount: string): Promise<Wallet> => {
-    const response = await apiClient.post<Wallet>('/api/wallet/withdraw', { amount });
+  withdraw: async (amount: string, stripeAccountId: string): Promise<{ transaction_id: string; status: string }> => {
+    const response = await apiClient.post<{ transaction_id: string; status: string }>('/api/wallet/withdraw', { 
+      amount,
+      stripe_account_id: stripeAccountId
+    });
     return response.data;
   },
   getTransactions: async (): Promise<Transaction[]> => {
-    // Note: Mocking gRPC Proxy /api/transactions
-    const response = await apiClient.get<{ transactions: Transaction[] }>('/api/transactions').catch(() => ({ data: { transactions: [] } }));
+    const response = await apiClient.get<{ transactions: Transaction[] }>('/api/transactions');
     return response.data.transactions;
   },
   getBalance: async (): Promise<{ usd_balance: string; btc_balance: string }> => {
-    // Note: Mocking gRPC Proxy /api/balance
-    const response = await apiClient.get<{ usd_balance: string; btc_balance: string }>('/api/balance').catch(() => ({ data: { usd_balance: '0.00', btc_balance: '0.00' } }));
+    const response = await apiClient.get<{ usd_balance: string; btc_balance: string }>('/api/balance');
     return response.data;
   }
 };

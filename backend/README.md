@@ -1,92 +1,98 @@
-# 🏛️ Broker Application Architecture (Backend)
+# 🏛️ TradeOff Backend: Mikroservis Mimarisi ve Yüksek Performanslı İşlem Sistemi
 
-A high-performance, event-driven trading broker platform built with **Go 1.22+** and a modern microservices architecture. This system is designed for high availability, transactional integrity, and low-latency order matching.
-
-![Go](https://img.shields.io/badge/go-1.22+-blue.svg)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)
-![Redis](https://img.shields.io/badge/Redis-7-red.svg)
-![Kafka](https://img.shields.io/badge/Kafka-Event--Driven-black.svg)
-![gRPC](https://img.shields.io/badge/gRPC-API-green.svg)
-![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)
+TradeOff backend ekosistemi, düşük gecikmeli emir eşleştirme, güvenli cüzdan yönetimi ve gerçek zamanlı veri işleme yeteneklerine sahip, **Go (Golang)** tabanlı bir mikroservis mimarisidir. Sistem, finansal işlemlerin doğruluğunu ve sistemin ölçeklenebilirliğini sağlamak için olay güdümlü (event-driven) bir tasarım kullanır.
 
 ---
 
-## 🏗️ System Architecture
+## 🛰️ Sistem Mimarisi ve Veri Akışı
 
-The platform is divided into specialized microservices that communicate via high-throughput Kafka topics and low-latency gRPC calls.
+Sistem, yüksek hacimli işlemleri yönetebilmek için **Apache Kafka** üzerinden haberleşen, birbirinden bağımsız servislerden oluşur.
 
 ```mermaid
-graph TD
-    Client[Web/Mobile Client] -->|REST/WS| BB[Broker Backend]
-    BB -->|gRPC| PS[Payment Service]
-    BB -->|Produce| K[Kafka]
-    IS[Ingestion Service] -->|Produce| K
-    K -->|Consume| ME[Matching Engine]
-    ME -->|Produce Trade Events| K
-    K -->|Consume| BB
+flowchart TD
+    %% Client Interaction
+    Client["Web/Mobile Client"] -->|"REST/WebSockets"| BB["Broker Backend"]
     
-    subgraph Storage
-        BB --- PG[(PostgreSQL)]
-        BB --- RD[(Redis)]
-        PS --- PSPG[(PostgreSQL)]
+    %% Core Services
+    BB -->|"gRPC"| PS["Payment Service"]
+    BB -->|"Event: OrderCreated"| K["Kafka"]
+    
+    %% Data Feed
+    IS["Ingestion Service"] -->|"Event: MarketUpdate"| K
+    
+    %% Engine
+    K -->|"Consume: Orders"| ME["Matching Engine"]
+    ME -->|"Event: TradeExecuted"| K
+    K -->|"Consume: Trades"| BB
+    
+    %% Storage Layer
+    subgraph Storage ["Veri ve Önbellek Katmanı"]
+        BB --- PG[("PostgreSQL")]
+        BB --- RD[("Redis")]
+        PS --- PSPG[("PostgreSQL")]
     end
+
+    style K fill:#f96,stroke:#333,stroke-width:2px
+    style ME fill:#00d2ff,stroke:#333,stroke-width:2px
+    style BB fill:#95ff95,stroke:#333,stroke-width:2px
 ```
 
-### 🛰️ Microservices Overview
+---
 
-*   **Core Broker Backend (`/broker-backend`)**
-    *   **Gateways**: REST and WebSocket APIs for clients.
-    *   **Wallet Domain**: Handles financial state with atomic precision (`DECIMAL(18,8)`). Uses PostgreSQL pessimistic locking to prevent race conditions during balance updates.
-    *   **Order Management**: Implements the **Outbox Pattern** to ensure database state and Kafka events are perfectly synchronized.
-*   **Matching Engine (`/matching-engine`)**
-    *   Ultra-fast order book management.
-    *   Matches buy/sell orders and generates execution reports.
-    *   Event-driven processing via Kafka.
-*   **Payment Service (`/payment-service`)**
-    *   gRPC-based service for processing deposits and withdrawals.
-    *   Integration with external payment gateways (Stripe, etc.).
-    *   Manages its own transactional state for payment auditing.
-*   **Ingestion Service (`/ingestion-service`)**
-    *   Real-time market data harvester.
-    *   Streams live price updates from external exchanges into Kafka.
+## 🛠️ Mikroservis Detayları
+
+### 1. Broker Backend (`/broker-backend`)
+Sistemin ana giriş noktasıdır.
+- **Sorumluluklar:** Kullanıcı yönetimi (Auth), Cüzdan yönetimi, Emir girişi.
+- **Teknik Detaylar:** `Clean Architecture` prensiplerine göre yapılandırılmıştır. PostgreSQL üzerinde **Pessimistic Locking** kullanarak bakiye tutarlılığını sağlar. **Outbox Pattern** ile veritabanı ve Kafka arasındaki veri senkronizasyonunu garanti eder.
+
+### 2. Matching Engine (`/matching-engine`)
+Sistemin beynidir; alım ve satım emirlerini milisaniyeler içinde eşleştirir.
+- **Sorumluluklar:** Emir defteri (Order Book) yönetimi, Fiyat eşleştirme.
+- **Teknik Detaylar:** Tamamen bellek içi (in-memory) veri yapıları ile çalışır ve Kafka üzerinden gelen emirleri asenkron olarak işler.
+
+### 3. Payment Service (`/payment-service`)
+Finansal dış dünya ile bağlantı noktasıdır.
+- **Sorumluluklar:** Para yatırma/çekme işlemleri, gRPC tabanlı finansal servisler.
+- **Teknik Detaylar:** Stripe gibi dış ödeme ağ geçitleri ile entegrasyona hazır gRPC arayüzleri sunar.
+
+### 4. Ingestion Service (`/ingestion-service`)
+Piyasa verisi sağlayıcısıdır.
+- **Sorumluluklar:** Canlı fiyat verilerini dış borsalardan toplar ve sisteme aktarır.
+- **Teknik Detaylar:** WebSocket stream'lerini dinleyerek Kafka üzerinden `MarketUpdate` olaylarını tetikler.
 
 ---
 
-## 🚀 Key Technologies & Design Patterns
+## 🚀 Teknolojik Yetkinlikler
 
-| Category | Technology / Pattern | Rationale |
+| Alan | Teknoloji | Neden? |
 | :--- | :--- | :--- |
-| **Language** | Go (Golang) | Superior concurrency, performance, and type safety. |
-| **Architecture** | Clean Architecture | Strict separation of Domain, Use Case, and Infrastructure. |
-| **Messaging** | Apache Kafka | Event sourcing and decoupling of critical services. |
-| **Communication** | gRPC / Protocol Buffers | Efficient, type-safe inter-service communication. |
-| **Integrity** | Outbox Pattern | Guaranteed "At Least Once" delivery of events. |
-| **Performance** | `sqlx` & Redis | Raw SQL performance with optimized caching layers. |
+| **Dil** | Go 1.22+ | Eşzamanlılık (Concurrency) desteği ve düşük bellek kullanımı. |
+| **İletişim** | gRPC / ProtoBuf | Tip güvenli ve ultra hızlı servisler arası iletişim. |
+| **Mesajlaşma** | Apache Kafka | Ölçeklenebilir ve dayanıklı olay akışı (event streaming). |
+| **Veritabanı** | PostgreSQL 16 | ACID uyumluluğu ve karmaşık işlemsel bütünlük. |
+| **Önbellek** | Redis 7 | Düşük gecikmeli oturum ve veri önbellekleme. |
+| **Gözlemlenebilirlik** | Prometheus / Grafana | Sistem sağlığını gerçek zamanlı izleme (Dashboard hazır). |
 
 ---
 
-## 📁 Project Structure
+## 📁 Proje Klasör Yapısı
 
 ```text
-.
-├── broker-backend/       # Main API Gateway, Wallet & Order management
-├── payment-service/      # gRPC service for financial transactions
-├── matching-engine/      # High-speed order matching logic
-├── ingestion-service/    # Real-time data feeds and market connectivity
-└── Postman/              # API Documentation & Collections
+backend/
+├── broker-backend/       # Gateway, Wallet & Order Domain
+├── payment-service/      # gRPC tabanlı finansal işlemler
+├── matching-engine/      # Yüksek hızlı emir eşleştirme mantığı
+├── ingestion-service/    # Real-time veri besleme servisi
+└── proto/                # Servisler arası gRPC tanımlamaları
 ```
 
 ---
 
-## 🛠️ Getting Started
+## ⚡ Hızlı Başlangıç
 
-### 1. Prerequisites
-- Docker & Docker Compose
-- Go 1.22 or higher
-- Postman (for API testing)
-
-### 2. Infrastructure Setup
-The core infrastructure (DBs, Cache, MQ) is orchestrated via Docker Compose within the `broker-backend` directory.
+### 1. Altyapı Hazırlığı
+Docker Compose kullanarak gerekli tüm veritabanı ve kuyruk sistemlerini tek komutla başlatın:
 
 ```bash
 cd broker-backend
@@ -94,25 +100,24 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-### 3. Running Services
-Each service can be started independently. For example, to start the core backend:
+### 2. Servislerin Çalıştırılması
+Her servis bağımsız olarak çalıştırılabilir. Örnek (Broker Backend):
 
 ```bash
 cd broker-backend
 go run cmd/server/main.go
 ```
 
----
-
-## 🧪 Testing & API Documentation
-
-- **Postman Collections**: Import the provided collections in the root folder (`Broker Backend APIs.postman_collection.json`) to test the REST endpoints.
-- **Service Collections**: Check individual service directories (e.g., `payment-service`) for specific gRPC/REST collections.
-
-## 🛡️ Security & Reliability
-- **Transactional Safety**: All wallet operations are wrapped in strictly isolated database transactions.
-- **Scalability**: All services are stateless and can be horizontally scaled using Kubernetes.
-- **Observability**: Designed for easy integration with Prometheus/Grafana and ELK stack.
+### 3. API Testleri
+Root dizinindeki Postman koleksiyonunu (`Broker Backend APIs.postman_collection.json`) içe aktararak tüm uç noktaları test edebilirsiniz.
 
 ---
-*Built with precision and performance in mind.*
+
+## 🛡️ Güvenlik ve Kararlılık İlkeleri
+
+- **İşlemsel Bütünlük:** Tüm cüzdan hareketleri atomik işlemler (Atomic Transactions) ile korunur.
+- **Hata Toleransı:** Kafka sayesinde bir servis geçici olarak dursa dahi, mesajlar kaybolmaz ve sistem geri geldiğinde kaldığı yerden devam eder.
+- **Ölçeklenebilirlik:** Mikroservislerin her biri ihtiyaca göre Kubernetes üzerinde bağımsız olarak ölçeklenebilir.
+
+---
+*Built for scale, speed, and reliability.*

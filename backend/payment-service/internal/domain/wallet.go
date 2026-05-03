@@ -15,12 +15,12 @@ import (
 // Wallet, bir kullanıcının finansal varlıklarını temsil eder.
 // Bakiye alanları decimal.Decimal ile taşınır; float64 kesinlik hataları yoktur.
 type Wallet struct {
-	ID         uuid.UUID       `db:"id"`
-	UserID     uuid.UUID       `db:"user_id"`
-	Balance    decimal.Decimal `db:"balance"`     // USD bakiyesi
-	BTCBalance decimal.Decimal `db:"btc_balance"` // BTC bakiyesi
-	Version    int             `db:"version"`     // Optimistic locking versiyonu
-	UpdatedAt  time.Time       `db:"updated_at"`
+	ID         uuid.UUID       `db:"id" json:"id"`
+	UserID     uuid.UUID       `db:"user_id" json:"user_id"`
+	Balance    decimal.Decimal `db:"balance" json:"balance"`     // USD bakiyesi
+	BTCBalance decimal.Decimal `db:"btc_balance" json:"btc_balance"` // BTC bakiyesi
+	Version    int             `db:"version" json:"version"`     // Optimistic locking versiyonu
+	UpdatedAt  time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // =============================================================================

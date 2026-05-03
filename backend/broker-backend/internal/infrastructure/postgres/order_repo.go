@@ -85,6 +85,22 @@ func (r *orderRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Or
 	return &o, nil
 }
 
+// GetUserOrders, belirli bir kullanıcıya ait tüm emirleri döner (en yeni önce).
+func (r *orderRepository) GetUserOrders(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error) {
+	const query = `
+		SELECT id, user_id, symbol, side, type, quantity, price, status, created_at, updated_at
+		FROM   orders
+		WHERE  user_id = $1
+		ORDER  BY created_at DESC
+	`
+
+	var orders []*domain.Order
+	if err := r.db.SelectContext(ctx, &orders, query, userID); err != nil {
+		return nil, fmt.Errorf("order GetUserOrders: %w", err)
+	}
+	return orders, nil
+}
+
 // UpdateStatus, belirtilen emrin status alanını günceller ve updated_at'i tazeler.
 func (r *orderRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus) error {
 	const query = `

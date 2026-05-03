@@ -21,6 +21,7 @@ function DepositFormContent() {
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fetchWallet = useWalletStore((state) => state.fetchWallet);
+  const fetchTransactions = useWalletStore((state) => state.fetchTransactions);
 
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,12 +37,7 @@ function DepositFormContent() {
 
     setIsSubmitting(true);
     try {
-      // In a real flow:
-      // 1. Create PaymentIntent on backend via gRPC Proxy.
-      // 2. Confirm card payment with stripe.confirmCardPayment using clientSecret.
-      // 3. Backend verifies and updates wallet via Webhook.
-      
-      // Here we simulate successful Stripe flow + Wallet update (Mocking the proxy)
+      // Send payment method to backend to create and confirm PaymentIntent
       const cardElement = elements.getElement(CardElement);
       if (cardElement) {
         const { error, paymentMethod } = await stripe.createPaymentMethod({
@@ -52,10 +48,17 @@ function DepositFormContent() {
         if (error) {
           throw new Error(error.message);
         }
+        
+        if (paymentMethod) {
+          const resp = await walletApi.deposit(amount, paymentMethod.id);
+          if (resp.status !== 'COMPLETED') {
+            throw new Error('Ödeme işlemi tamamlanamadı. Lütfen daha sonra tekrar deneyin.');
+          }
+        }
       }
       
-      await walletApi.deposit(amount);
       fetchWallet();
+      fetchTransactions(); // İşlem geçmişini de güncelle
       toast.success('Para yatırma işlemi başarıyla gerçekleştirildi!');
       setAmount('');
       elements.getElement(CardElement)?.clear();

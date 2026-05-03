@@ -19,6 +19,7 @@ export function OrderForm() {
   
   const livePrice = useTradeStore((state) => state.livePrice);
   const addOrder = useTradeStore((state) => state.addOrder);
+  const fetchOrders = useTradeStore((state) => state.fetchOrders);
   const fetchWallet = useWalletStore((state) => state.fetchWallet);
   const wallet = useWalletStore((state) => state.wallet);
 
@@ -44,6 +45,7 @@ export function OrderForm() {
       });
       addOrder(order);
       fetchWallet();
+      fetchOrders(); // Listeyi anında güncelle
       toast.success(`${side} emri başarıyla iletildi!`);
       setQuantity('');
       if (type === 'LIMIT') setPrice('');

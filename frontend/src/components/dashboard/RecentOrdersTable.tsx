@@ -3,19 +3,23 @@
 import { Card } from '@/components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
-import { useTradeStore } from '@/stores/tradeStore';
+import { useOrders } from '@/hooks/useOrders';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { format } from 'date-fns';
 
 export function RecentOrdersTable() {
-  const orders = useTradeStore((state) => state.orders);
-  
+  const { orders, ordersLoading } = useOrders();
+
   // Sadece ilk 5 emri göster
   const recentOrders = orders.slice(0, 5);
 
   return (
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--border)] p-4">
+      <div className="border-b border-[var(--border)] p-4 flex items-center justify-between">
         <h3 className="font-bold text-[var(--text-primary)]">Son Emirler</h3>
+        {ordersLoading && (
+          <span className="text-xs text-[var(--text-muted)] animate-pulse">Güncelleniyor...</span>
+        )}
       </div>
       <Table>
         <TableHeader>
@@ -29,7 +33,17 @@ export function RecentOrdersTable() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {recentOrders.length === 0 ? (
+          {ordersLoading && orders.length === 0 ? (
+            <>
+              {[...Array(3)].map((_, i) => (
+                <TableRow key={i}>
+                  {[...Array(6)].map((_, j) => (
+                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </>
+          ) : recentOrders.length === 0 ? (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-[var(--text-muted)] py-8">
                 Henüz emir bulunmuyor.

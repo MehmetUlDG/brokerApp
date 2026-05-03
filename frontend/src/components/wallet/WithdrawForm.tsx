@@ -9,6 +9,7 @@ import { useWalletStore } from '@/stores/walletStore';
 
 export function WithdrawForm() {
   const [amount, setAmount] = useState('');
+  const [stripeAccountId, setStripeAccountId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fetchWallet = useWalletStore((state) => state.fetchWallet);
   const wallet = useWalletStore((state) => state.wallet);
@@ -20,6 +21,11 @@ export function WithdrawForm() {
       return;
     }
 
+    if (!stripeAccountId) {
+      toast.error('Lütfen gönderilecek Stripe hesap ID\'sini girin.');
+      return;
+    }
+
     if (wallet && Number(amount) > parseFloat(wallet.balance)) {
       toast.error('Yetersiz bakiye.');
       return;
@@ -27,7 +33,10 @@ export function WithdrawForm() {
 
     setIsSubmitting(true);
     try {
-      await walletApi.withdraw(amount);
+      const resp = await walletApi.withdraw(amount, stripeAccountId);
+      if (resp.status !== 'COMPLETED') {
+        throw new Error('İşlem devam ediyor veya başarısız oldu.');
+      }
       fetchWallet();
       toast.success('Para çekme işlemi başarıyla gerçekleştirildi!');
       setAmount('');
@@ -47,6 +56,13 @@ export function WithdrawForm() {
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
         placeholder="0.00"
+      />
+      <Input
+        label="Stripe Hesap ID"
+        type="text"
+        value={stripeAccountId}
+        onChange={(e) => setStripeAccountId(e.target.value)}
+        placeholder="acct_123456789"
       />
       <div className="flex justify-between text-sm py-2">
         <span className="text-[var(--text-secondary)]">Mevcut Bakiye:</span>

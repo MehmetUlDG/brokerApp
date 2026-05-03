@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -73,7 +74,7 @@ func NewMatchingEngine(brokerAddr string) *MatchingEngine {
 		orders: make([]OrderMsg, 0),
 		producer: &kafka.Writer{
 			Addr:     kafka.TCP(brokerAddr),
-			Topic:    "trade-executed",
+			Topic:    "broker.trades",
 			Balancer: &kafka.LeastBytes{},
 		},
 		priceChan: make(chan LivePriceMsg, 1000), // Buffer
@@ -109,10 +110,12 @@ func (e *MatchingEngine) Stop() {
 // ----------------------------------------------------------------------------
 
 func (e *MatchingEngine) consumeLivePrices(ctx context.Context, brokerAddr string) {
+	log.Printf("[LivePrices] Kafka'ya bağlanılıyor: %s", brokerAddr)
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{brokerAddr},
-		Topic:   "live-prices",
-		GroupID: "matching-engine-prices-group", // Tüm engine'ler okumalıysa ayrı group olabilir
+		Brokers:     []string{brokerAddr},
+		Topic:       "live-prices",
+		GroupID:     "matching-engine-prices-group", // Tüm engine'ler okumalıysa ayrı group olabilir
+		StartOffset: kafka.LastOffset,
 	})
 	defer reader.Close()
 
@@ -122,6 +125,7 @@ func (e *MatchingEngine) consumeLivePrices(ctx context.Context, brokerAddr strin
 			log.Printf("[Err] live-prices okunamadı: %v", err)
 			continue
 		}
+		log.Printf("[LivePrices] Mesaj alındı: %s", string(msg.Value))
 
 		var priceMsg LivePriceMsg
 		if err := json.Unmarshal(msg.Value, &priceMsg); err == nil {
@@ -131,10 +135,18 @@ func (e *MatchingEngine) consumeLivePrices(ctx context.Context, brokerAddr strin
 	}
 }
 
+// Kafka'dan gelen envelope wrapper
+type kafkaEnvelope struct {
+	EventType     string          `json:"event_type"`
+	AggregateType string          `json:"aggregate_type"`
+	AggregateID   string          `json:"aggregate_id"`
+	Payload       json.RawMessage `json:"payload"`
+}
+
 func (e *MatchingEngine) consumeNewOrders(ctx context.Context, brokerAddr string) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{brokerAddr},
-		Topic:   "new-orders",
+		Topic:   "broker.orders",
 		GroupID: "matching-engine-orders-group",
 	})
 	defer reader.Close()
@@ -146,11 +158,22 @@ func (e *MatchingEngine) consumeNewOrders(ctx context.Context, brokerAddr string
 			continue
 		}
 
-		var orderMsg OrderMsg
-		if err := json.Unmarshal(msg.Value, &orderMsg); err == nil {
-			// İşlenmesi için channel'a yolla
-			e.orderChan <- orderMsg
+		// Önce envelope'u parse et
+		var envelope kafkaEnvelope
+		if err := json.Unmarshal(msg.Value, &envelope); err != nil {
+			log.Printf("[Err] envelope parse hatası: %v", err)
+			continue
 		}
+
+		// Sonra payload içindeki OrderMsg'yi parse et
+		var orderMsg OrderMsg
+		if err := json.Unmarshal(envelope.Payload, &orderMsg); err != nil {
+			log.Printf("[Err] orderMsg parse hatası: %v", err)
+			continue
+		}
+
+		log.Printf("[Order] Alındı: %s %s %s", orderMsg.ID, orderMsg.Symbol, orderMsg.Side)
+		e.orderChan <- orderMsg
 	}
 }
 
@@ -168,7 +191,7 @@ func (e *MatchingEngine) matchLoop(ctx context.Context) {
 		// Durum 1: Yeni Fiyat Geldi
 		case p := <-e.priceChan:
 			priceF, _ := strconv.ParseFloat(p.Price, 64)
-
+			log.Printf("[Price Update] %s = %.2f", p.Symbol, priceF)
 			// 1. Gelen fiyatı State'e yaz (RWMutex Writer Lock)
 			e.priceMu.Lock()
 			e.prices[p.Symbol] = priceF
@@ -183,6 +206,7 @@ func (e *MatchingEngine) matchLoop(ctx context.Context) {
 			e.priceMu.RLock()
 			currentPrice, exists := e.prices[o.Symbol]
 			e.priceMu.RUnlock()
+			log.Printf("[Order] %s için fiyat var mı: %v, fiyat: %.2f", o.Symbol, exists, currentPrice)
 
 			if !exists {
 				// Eşleştirme henüz mümkün değil, sıraya (Slice) at.
@@ -229,6 +253,7 @@ func (e *MatchingEngine) tryMatchSingleOrder(o OrderMsg, currentPrice float64) b
 
 // Slice tarayarak gerçekleşenleri tespit etme
 func (e *MatchingEngine) scanAndMatchOrders(symbol string, currentPrice float64) {
+	log.Printf("[Scan] %s fiyatı: %.2f, bekleyen emir sayısı: %d", symbol, currentPrice, len(e.orders))
 	e.ordersMu.Lock()
 	defer e.ordersMu.Unlock()
 
@@ -281,6 +306,13 @@ func (e *MatchingEngine) executeTrade(o OrderMsg, execPrice float64) {
 	}
 }
 
+func getEnv(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
 // ============================================================================
 // MAIN ENTRYPOINT
 // ============================================================================
@@ -289,7 +321,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	brokerAddr := "localhost:9092" // Sistem ayağa kalktığında Docker'daki adress
+	brokerAddr := getEnv("KAFKA_BROKERS", "kafka:29092") // Sistem ayağa kalktığında Docker'daki adress
 	engine := NewMatchingEngine(brokerAddr)
 
 	engine.Start(ctx, brokerAddr)

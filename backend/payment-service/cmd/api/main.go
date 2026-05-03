@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -76,6 +77,10 @@ func mustEnv(key string) string {
 // =============================================================================
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("⚠  .env dosyası yüklenemedi — sistem ortam değişkenleri kullanılıyor")
+	}
+
 	logger, _ := zap.NewProduction()
 	defer func() {
 		if err := logger.Sync(); err != nil {

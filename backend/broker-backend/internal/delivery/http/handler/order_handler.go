@@ -116,3 +116,28 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusCreated, order)
 }
+
+// GetOrders godoc
+//
+//	GET /api/orders
+//	Yanıt: 200 OK → [ { order }, ... ] — giriş yapmış kullanıcıya ait emirler (en yeni önce)
+func (h *OrderHandler) GetOrders(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "yetkilendirme hatası"})
+		return
+	}
+
+	orders, err := h.usecase.GetUserOrders(r.Context(), userID)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "emirler getirilemedi"})
+		return
+	}
+
+	// nil slice yerine boş dizi döndür (frontend dostu)
+	if orders == nil {
+		orders = []*domain.Order{}
+	}
+
+	respondJSON(w, http.StatusOK, orders)
+}

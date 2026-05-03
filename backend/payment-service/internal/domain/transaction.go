@@ -43,15 +43,15 @@ const (
 // Amount alanı her zaman decimal.Decimal olarak taşınır; string'e yalnızca
 // proto sınırında dönüştürülür.
 type Transaction struct {
-	ID        uuid.UUID         `db:"id"`
-	UserID    uuid.UUID         `db:"user_id"`
-	Type      TransactionType   `db:"type"`
-	Amount    decimal.Decimal   `db:"amount"`
-	Currency  string            `db:"currency"`
-	Status    TransactionStatus `db:"status"`
-	StripeRef string            `db:"stripe_ref"`
-	CreatedAt time.Time         `db:"created_at"`
-	UpdatedAt time.Time         `db:"updated_at"`
+	ID        uuid.UUID         `db:"id" json:"id"`
+	UserID    uuid.UUID         `db:"user_id" json:"user_id"`
+	Type      TransactionType   `db:"type" json:"type"`
+	Amount    decimal.Decimal   `db:"amount" json:"amount"`
+	Currency  string            `db:"currency" json:"currency"`
+	Status    TransactionStatus `db:"status" json:"status"`
+	StripeRef string            `db:"stripe_ref" json:"stripe_ref"`
+	CreatedAt time.Time         `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time         `db:"updated_at" json:"updated_at"`
 }
 
 // =============================================================================

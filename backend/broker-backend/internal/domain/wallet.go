@@ -16,12 +16,12 @@ import (
 // PasswordHash alanı hiçbir zaman JSON olarak dışarıya sızdırılmamalıdır;
 // delivery katmanındaki response DTO'larına bu alan dahil edilmemelidir.
 type User struct {
-	ID           uuid.UUID `db:"id"`
-	Email        string    `db:"email"`
-	PasswordHash string    `db:"password_hash"` // JSON'a açılmaz — delivery katmanında atlanır
-	FirstName    string    `db:"first_name"`
-	LastName     string    `db:"last_name"`
-	CreatedAt    time.Time `db:"created_at"`
+	ID           uuid.UUID `db:"id" json:"id"`
+	Email        string    `db:"email" json:"email"`
+	PasswordHash string    `db:"password_hash" json:"-"` // JSON'a açılmaz
+	FirstName    string    `db:"first_name" json:"first_name"`
+	LastName     string    `db:"last_name" json:"last_name"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
 // FullName, kullanıcının tam adını döner (Ad + Soyad).
@@ -39,11 +39,11 @@ func (u *User) FullName() string {
 //   - DECIMAL(18,8) ↔ decimal.Decimal dönüşümü kayıpsızdır.
 //   - Finansal hesaplarda standart yaklaşımdır.
 type Wallet struct {
-	ID         uuid.UUID       `db:"id"`
-	UserID     uuid.UUID       `db:"user_id"`
-	Balance    decimal.Decimal `db:"balance"`     // USD bakiyesi
-	BTCBalance decimal.Decimal `db:"btc_balance"` // BTC bakiyesi (demo)
-	UpdatedAt  time.Time       `db:"updated_at"`
+	ID         uuid.UUID       `db:"id" json:"id"`
+	UserID     uuid.UUID       `db:"user_id" json:"user_id"`
+	Balance    decimal.Decimal `db:"balance" json:"balance"`     // USD bakiyesi
+	BTCBalance decimal.Decimal `db:"btc_balance" json:"btc_balance"` // BTC bakiyesi (demo)
+	UpdatedAt  time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // =============================================================================

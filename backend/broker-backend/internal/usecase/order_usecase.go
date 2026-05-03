@@ -61,3 +61,8 @@ func (u *orderUsecase) PlaceOrder(ctx context.Context, params domain.PlaceOrderP
 	// Bilgileri dön
 	return newOrder, nil
 }
+
+// GetUserOrders, giriş yapmış kullanıcıya ait tüm emirleri döner.
+func (u *orderUsecase) GetUserOrders(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error) {
+	return u.repo.GetUserOrders(ctx, userID)
+}
